@@ -78,4 +78,5 @@ import pylab
 pylab.plot(smoothed_output, label='output')
 pylab.plot(data_stim, lw=2, label='input')
 pylab.legend(loc='lower right')
+pylab.savefig('test_learning.png')
 pylab.show()
