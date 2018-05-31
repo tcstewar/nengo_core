@@ -77,8 +77,10 @@ class Core(object):
                 # set spiked voltages to zero, and rectify negative voltages to zero
                 self.voltage[i] = 0
 
+                # do the low-pass filter needed for learning
                 self.learning_activity[i] += self.learning_scale
 
+                # handle the output connection weights
                 output += self.decoders[:,i]
 
         return output
