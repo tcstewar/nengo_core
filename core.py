@@ -36,22 +36,16 @@ class Core(object):
         # feed input over the static synapses
         current = self.compute_neuron_input(state)
         # do the neural nonlinearity
-        activity = self.neuron(current)
-        # apply the learned synapses
-        value = self.compute_output(activity)
+        value = self.neuron_and_output_weights(current)
 
         if error is not None:
-            # apply low-pass filter on activity to smooth learning
-            self.learning_activity = (activity*self.learning_scale +
-                    self.learning_activity*(1-self.learning_scale))
-
             # update the synapses with the learning rule
             delta = np.outer(error, self.learning_activity)
             self.decoders -= delta * self.learning_rate
 
         return value
 
-    def neuron(self, current):
+    def neuron_and_output_weights(self, current):
         # reduce all refractory times by dt
         self.refractory_time -= self.dt
 
@@ -64,29 +58,31 @@ class Core(object):
         # since v(t) = v(0) + (J - v(0))*(1 - exp(-t/tau)) assuming
         # J is constant over the interval [t, t + dt)
         self.voltage -= (current - self.voltage) * np.expm1(-delta_t / self.tau_rc)
-
-        # determine which neurons spiked this time step
-        #  NOTE: this will be very sparse, since few neurons spike at once
-        spiked = self.voltage > 1
-
-        # compute when during the timestep the spike happened
-        t_spike = self.dt + self.tau_rc * np.log1p(
-                    -(self.voltage[spiked] - 1) / (current[spiked] - 1))
-        # use this time to set the refractory_time accurately
-        self.refractory_time[spiked] = self.tau_ref + t_spike
-
-        # set spiked voltages to zero, and rectify negative voltages to zero
         self.voltage[self.voltage < 0] = 0
-        self.voltage[spiked] = 0
 
-        return spiked
+        # this is only needed if we're doing learning
+        self.learning_activity *= (1-self.learning_scale)
+
+        output = np.zeros(self.n_outputs)
+        for i in range(self.n_neurons):
+            # determine which neurons spiked this time step
+            #  NOTE: this will be very sparse, since few neurons spike at once
+            if self.voltage[i] > 1:
+                # compute when during the timestep the spike happened
+                t_spike = self.dt + self.tau_rc * np.log1p(
+                            -(self.voltage[i] - 1) / (current[i] - 1))
+                # use this time to set the refractory_time accurately
+                self.refractory_time[i] = self.tau_ref + t_spike
+
+                # set spiked voltages to zero, and rectify negative voltages to zero
+                self.voltage[i] = 0
+
+                self.learning_activity[i] += self.learning_scale
+
+                output += self.decoders[:,i]
+
+        return output
 
     def compute_neuron_input(self, state):
         # this tends to be a dense matrix multiply
         return np.dot(self.encoders, state) + self.bias
-
-    def compute_output(self, activity):
-        # since activity is sparse (1s for neurons who just spiked, 0s for
-        #  others), this may be efficiently done as an add operation
-        return np.dot(self.decoders, activity)
-
